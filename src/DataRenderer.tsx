@@ -1,6 +1,6 @@
 import * as React from 'react';
 import * as DataTypeDetection from './DataTypeDetection';
-import { AriaLabels, NodeExpandingEvent } from '.';
+import { AriaLabels, CustomRenderNode, NodeExpandingEvent } from '.';
 
 export interface StyleProps {
   container: string;
@@ -31,8 +31,9 @@ interface CommonRenderProps {
   style: StyleProps;
   shouldExpandNode: (level: number, value: any, field?: string) => boolean;
   clickToExpandNode: boolean;
-  outerRef: React.RefObject<HTMLDivElement>;
+  outerRef: React.RefObject<HTMLDivElement | null>;
   beforeExpandChange?: (event: NodeExpandingEvent) => boolean;
+  customRenderNode?: CustomRenderNode;
 }
 
 export interface JsonRenderProps<T> extends CommonRenderProps {
@@ -75,7 +76,8 @@ function ExpandableObject({
   shouldExpandNode,
   clickToExpandNode,
   outerRef,
-  beforeExpandChange
+  beforeExpandChange,
+  customRenderNode
 }: ExpandableRenderProps) {
   // follows tree example for role structure and keypress actions: https://www.w3.org/WAI/ARIA/apg/patterns/treeview/examples/treeview-1a/
 
@@ -156,6 +158,11 @@ function ExpandableObject({
     buttonElement.focus();
   };
 
+  let customRenderNodeComponent: React.ReactNode | null = null;
+  if (customRenderNode?.matchFn(field, value)) {
+    customRenderNodeComponent = customRenderNode?.componentFn(value);
+  }
+
   return (
     <div
       className={style.basicChildStyle}
@@ -184,26 +191,32 @@ function ExpandableObject({
             {quoteString(field, style.quotesForFieldNames)}:
           </span>
         ) : (
-          <span className={style.label}>{quoteString(field, style.quotesForFieldNames)}:</span>
+          <span className={style.label}>
+            {quoteString(field, style.quotesForFieldNames)}:
+          </span>
         ))}
       <span className={style.punctuation}>{openBracket}</span>
 
       {expanded ? (
-        <ul id={contentsId} role='group' className={style.childFieldsContainer}>
-          {data.map((dataElement, index) => (
-            <DataRender
-              key={dataElement[0] || index}
-              field={dataElement[0]}
-              value={dataElement[1]}
-              style={style}
-              lastElement={index === lastIndex}
-              level={childLevel}
-              shouldExpandNode={shouldExpandNode}
-              clickToExpandNode={clickToExpandNode}
-              outerRef={outerRef}
-            />
-          ))}
-        </ul>
+        <React.Fragment>
+          {customRenderNodeComponent && customRenderNodeComponent}
+          <ul id={contentsId} role='group' className={style.childFieldsContainer}>
+            {data.map((dataElement, index) => (
+              <DataRender
+                key={dataElement[0] || index}
+                field={dataElement[0]}
+                value={dataElement[1]}
+                style={style}
+                lastElement={index === lastIndex}
+                level={childLevel}
+                shouldExpandNode={shouldExpandNode}
+                clickToExpandNode={clickToExpandNode}
+                outerRef={outerRef}
+                customRenderNode={customRenderNode}
+              />
+            ))}
+          </ul>
+        </React.Fragment>
       ) : (
         // don't apply role="button" or tabIndex even though has onClick, because has same
         // function as the +/- expander button (so just expose that button to keyboard and a11y tree)
@@ -247,7 +260,8 @@ function JsonObject({
   clickToExpandNode,
   level,
   outerRef,
-  beforeExpandChange
+  beforeExpandChange,
+  customRenderNode
 }: JsonRenderProps<Object>) {
   return ExpandableObject({
     field,
@@ -261,7 +275,8 @@ function JsonObject({
     clickToExpandNode,
     data: Object.keys(value).map((key) => [key, value[key as keyof typeof value]]),
     outerRef,
-    beforeExpandChange
+    beforeExpandChange,
+    customRenderNode
   });
 }
 
@@ -274,7 +289,8 @@ function JsonArray({
   shouldExpandNode,
   clickToExpandNode,
   outerRef,
-  beforeExpandChange
+  beforeExpandChange,
+  customRenderNode
 }: JsonRenderProps<Array<any>>) {
   return ExpandableObject({
     field,
@@ -288,7 +304,8 @@ function JsonArray({
     clickToExpandNode,
     data: value.map((element) => [undefined, element]),
     outerRef,
-    beforeExpandChange
+    beforeExpandChange,
+    customRenderNode
   });
 }
 
@@ -296,7 +313,8 @@ function JsonPrimitiveValue({
   field,
   value,
   style,
-  lastElement
+  lastElement,
+  customRenderNode
 }: JsonRenderProps<string | number | boolean | Date | Function | null | undefined>) {
   let stringValue;
   let valueStyle = style.otherValue;
@@ -336,7 +354,9 @@ function JsonPrimitiveValue({
       {(field || field === '') && (
         <span className={style.label}>{quoteString(field, style.quotesForFieldNames)}:</span>
       )}
-      <span className={valueStyle}>{stringValue}</span>
+      <span className={valueStyle}>
+        <TruncatedText text={stringValue} maxSize={200} />
+      </span>
       {!lastElement && <span className={style.punctuation}>,</span>}
     </div>
   );
@@ -358,3 +378,43 @@ export default function DataRender(props: JsonRenderProps<any>) {
 
   return <JsonPrimitiveValue {...props} />;
 }
+
+export interface TruncatedTextProps {
+  text: string;
+  maxSize: number;
+  className?: string;
+}
+
+export const TruncatedText: React.FC<TruncatedTextProps> = ({ text, maxSize, className }) => {
+  const [isExpanded, setIsExpanded] = React.useState(false);
+
+  const shouldTruncate = text.length > maxSize;
+  const displayText = shouldTruncate && !isExpanded ? `${text.slice(0, maxSize)}...` : text;
+
+  const handleClick = () => {
+    if (shouldTruncate) {
+      setIsExpanded(!isExpanded);
+    }
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (shouldTruncate && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      setIsExpanded(!isExpanded);
+    }
+  };
+
+  return (
+    <span
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      role={shouldTruncate ? 'button' : undefined}
+      tabIndex={shouldTruncate ? 0 : undefined}
+      aria-expanded={shouldTruncate ? isExpanded : undefined}
+      style={{ cursor: shouldTruncate ? 'pointer' : 'default' }}
+      className={className}
+    >
+      {displayText}
+    </span>
+  );
+}; 

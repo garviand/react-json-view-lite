@@ -19,12 +19,18 @@ const defaultAriaLables: AriaLabels = {
   expandJson: 'expand JSON'
 };
 
+export interface CustomRenderNode {
+  matchFn: (field: string | undefined, value: any) => boolean;
+  componentFn: (value: any) => React.ReactNode;
+}
+
 export interface Props extends React.AriaAttributes {
   data: Object | Array<any>;
   style?: Partial<StyleProps>;
   shouldExpandNode?: (level: number, value: any, field?: string) => boolean;
   clickToExpandNode?: boolean;
   beforeExpandChange?: (event: NodeExpandingEvent) => boolean;
+  customRenderNode?: CustomRenderNode;
 }
 
 export const defaultStyles: StyleProps = {
@@ -80,6 +86,7 @@ export const JsonView = ({
   shouldExpandNode = allExpanded,
   clickToExpandNode = false,
   beforeExpandChange,
+  customRenderNode,
   ...ariaAttrs
 }: Props) => {
   const outerRef = React.useRef<HTMLDivElement>(null);
@@ -100,6 +107,7 @@ export const JsonView = ({
         clickToExpandNode={clickToExpandNode}
         outerRef={outerRef}
         beforeExpandChange={beforeExpandChange}
+        customRenderNode={customRenderNode}
       />
     </div>
   );
